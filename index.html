@@ -3454,6 +3454,7 @@ function showEbayManualFallback(item) {
 }
 
 
+function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 function escAttr(s) {
