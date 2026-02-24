@@ -2241,6 +2241,60 @@ VINTAGE: If pre-2000, unbranded, or seller mentions vintage, set "is_vintage": t
 
 PRICING: If seller states a price in their voice notes, use that exact price — do not adjust it up or down. Only suggest a different price if no price was given, in which case suggest fair current market value. If you think the seller's price is significantly below market, flag it in pricing_alert but still use their stated price in suggested_price_gbp.
 
+EBAY UK CATEGORY IDs — pick the single most specific leaf category:
+WOMEN'S CLOTHING:
+- Jackets & Coats: 50993
+- Dresses: 50986
+- Tops & Shirts: 50997
+- Skirts: 50994
+- Trousers & Leggings: 50999
+- Jeans: 11555
+- Jumpers & Cardigans: 50996
+- Suits & Tailoring: 50995
+- Shorts: 50998
+- Swimwear: 50983
+- Lingerie & Nightwear: 50984
+- Activewear: 183304
+- Blouses: 50997
+MEN'S CLOTHING:
+- Jackets & Coats: 57988
+- Shirts: 57991
+- Trousers: 57997
+- Jeans: 57989
+- Jumpers & Cardigans: 57990
+- Suits: 57992
+- T-Shirts: 57996
+SHOES:
+- Women's Heels: 62107
+- Women's Boots: 62111
+- Women's Flats: 45333
+- Women's Trainers: 95672
+- Men's Shoes: 93427
+- Men's Boots: 11498
+ACCESSORIES:
+- Women's Bags & Handbags: 169291
+- Scarves & Wraps: 45238
+- Belts: 2993
+- Hats: 52365
+- Sunglasses: 79720
+- Women's Jewellery (general): 50986 
+- Necklaces & Pendants: 164
+- Earrings: 10986
+- Rings: 67726
+- Bracelets: 137835
+- Brooches: 14053
+- Vintage Jewellery: 478
+VINYL:
+- Pop: 306
+- Rock: 38034
+- Soul/R&B: 40651
+- Jazz: 1698
+- Classical: 1699
+- Electronic/Dance: 1572
+- Hip Hop: 85
+- Folk: 1699
+- Country: 1699
+
 Return ONLY valid JSON:
 {
   "detected_brand": "",
@@ -2257,7 +2311,15 @@ Return ONLY valid JSON:
   "pricing_alert": "",
   "reprice_recommendation": "",
   "condition_statement": "",
-  "item_specifics": {}
+  "item_specifics": {
+    "Type": "",
+    "Colour": "",
+    "Brand": "",
+    "Size": "",
+    "Material": "",
+    "Style": "",
+    "Era": ""
+  }
 }`;
 
   const userContent = [
@@ -3373,6 +3435,25 @@ function setListingType(index, type) {
 }
 
 
+function compressPhoto(base64, maxSize) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      if (w > maxSize || h > maxSize) {
+        if (w > h) { h = Math.round(h * maxSize / w); w = maxSize; }
+        else { w = Math.round(w * maxSize / h); h = maxSize; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', 0.75));
+    };
+    img.onerror = reject;
+    img.src = base64;
+  });
+}
+
 async function sendToEbay() {
   if (currentQueueIndex === null) return;
   const item = state.queue[currentQueueIndex];
@@ -3396,6 +3477,25 @@ async function sendToEbay() {
 
     // eBay Trading API — AddItem call
     const listingType = item.listingType || 'fixed';
+
+    // Collect item specifics
+    const specifics = {};
+    if (r.item_specifics) Object.assign(specifics, r.item_specifics);
+    if (r.specs) Object.assign(specifics, r.specs);
+    if (!specifics['Type'] && r.category) specifics['Type'] = r.category;
+    if (!specifics['Colour'] && r.colour) specifics['Colour'] = r.colour;
+    if (!specifics['Brand'] && r.brand) specifics['Brand'] = r.brand;
+    if (!specifics['Size'] && r.size) specifics['Size'] = r.size;
+
+    // Collect photos — compress to max 1000px before sending
+    const photos = [];
+    for (const photo of (item.photos || []).filter(p => p && p.length > 100).slice(0, 4)) {
+      try {
+        const compressed = await compressPhoto(photo, 1000);
+        photos.push(compressed);
+      } catch(e) { photos.push(photo); }
+    }
+
     const response = await fetch(state.ebayScriptUrl, {
       method: 'POST',
       body: JSON.stringify({
@@ -3403,9 +3503,11 @@ async function sendToEbay() {
         title: title,
         description: r.description || '',
         price: price,
-        categoryId: r.ebay_category_id || '15724',
+        categoryId: r.ebay_category_id || '50993',
         isVintage: r.is_vintage || false,
         listingType: listingType,
+        specifics: specifics,
+        photos: photos,
       }),
     });
 
