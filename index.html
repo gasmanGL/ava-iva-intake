@@ -1481,14 +1481,29 @@ function handlePhotoInput(e) {
   const files = Array.from(e.target.files);
   files.forEach(file => {
     if (state.photos.length >= 8) return;
-    // Compress image before storing
     compressImage(file).then(dataUrl => {
-      state.photos.push({ file, dataUrl });
+      const photoObj = { file, dataUrl, driveUrl: null };
+      state.photos.push(photoObj);
       renderPhotoGrid();
       updateReadiness();
+      // Upload to Drive in background — store URL when done
+      uploadPhotoToDrive(dataUrl).then(url => {
+        if (url) photoObj.driveUrl = url;
+      }).catch(() => {});
     });
   });
   e.target.value = '';
+}
+
+async function uploadPhotoToDrive(dataUrl) {
+  try {
+    const response = await fetch(state.ebayScriptUrl, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'uploadPhoto', photo: dataUrl }),
+    });
+    const result = await response.json();
+    return result.url || null;
+  } catch(e) { return null; }
 }
 
 function compressImage(file) {
@@ -2136,7 +2151,7 @@ function gatherItemData() {
       condition: document.getElementById('cfCondition').value,
       condNote: document.getElementById('cfCondNote').value,
       transcript: getCombinedTranscript(),
-      photos: state.photos.map(p => p.dataUrl),
+      photos: state.photos.map(p => p.driveUrl || p.dataUrl),
     };
   } else {
     return {
@@ -2149,7 +2164,7 @@ function gatherItemData() {
       platform: document.getElementById('vfPlatform').value,
       notes: document.getElementById('vfNotes').value,
       transcript: getCombinedTranscript(),
-      photos: state.photos.map(p => p.dataUrl),
+      photos: state.photos.map(p => p.driveUrl || p.dataUrl),
     };
   }
 }
@@ -3447,7 +3462,7 @@ function compressPhoto(base64, maxSize) {
       const canvas = document.createElement('canvas');
       canvas.width = w; canvas.height = h;
       canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      resolve(canvas.toDataURL('image/jpeg', 0.75));
+      resolve(canvas.toDataURL('image/jpeg', 0.4));
     };
     img.onerror = reject;
     img.src = base64;
@@ -3487,14 +3502,8 @@ async function sendToEbay() {
     if (!specifics['Brand'] && r.brand) specifics['Brand'] = r.brand;
     if (!specifics['Size'] && r.size) specifics['Size'] = r.size;
 
-    // Collect photos — compress to max 1000px before sending
-    const photos = [];
-    for (const photo of (item.photos || []).filter(p => p && p.length > 100).slice(0, 4)) {
-      try {
-        const compressed = await compressPhoto(photo, 1000);
-        photos.push(compressed);
-      } catch(e) { photos.push(photo); }
-    }
+    // Photos — use Drive URLs directly if available, otherwise send base64
+    const photos = (item.photos || []).filter(p => p && p.length > 10).slice(0, 8);
 
     const response = await fetch(state.ebayScriptUrl, {
       method: 'POST',
