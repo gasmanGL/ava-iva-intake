@@ -932,7 +932,7 @@
     </button>
     <div class="session-badge">
       <strong id="sessionDate">—</strong>
-      Intake v24
+      Intake v25
     </div>
   </div>
 </header>
@@ -1302,6 +1302,18 @@ function updateKeyBtn() {
   }
 }
 
+function parseSheetDate(val) {
+  if (!val) return new Date().toISOString();
+  // Handle UK format dd/mm/yyyy
+  const ukMatch = String(val).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (ukMatch) {
+    return new Date(`${ukMatch[3]}-${ukMatch[2].padStart(2,'0')}-${ukMatch[1].padStart(2,'0')}`).toISOString();
+  }
+  // Handle ISO and anything else
+  const d = new Date(val);
+  return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+}
+
 // ── Google Sheets Integration (via Apps Script) ────────────────────────────
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbycgB0NDxKgQ9M85O8twMxykyRv-ZLDlE2n--KqA8v0rg4dEF_gJv9Ixrk7ua-bfg4_dw/exec';
 
@@ -1353,7 +1365,7 @@ async function syncFromSheet() {
 
     const sheetItems = data.rows.map(row => ({
       id: parseInt(row[0]) || Date.now(),
-      date: row[1] ? new Date(row[1]).toISOString() : new Date().toISOString(),
+      date: parseSheetDate(row[1]),
       locationCode: row[2] || '',
       status: row[3] || 'queued',
       mode: row[4] || 'clothing',
